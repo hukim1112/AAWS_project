@@ -71,6 +71,13 @@ Supervisor가 Navigator와 Coder를 **팀원으로 지휘**하는 구조로 전�
 사용자는 목표만 말하면 되고, Supervisor가 "Navigator에게 분석 맡기고, 결과를 Coder에게 전달"하는 판단을 자율적으로 수행합니다.  
 실전 사이트([Quotes to Scrape](http://quotes.toscrape.com))에 대해 3가지 시나리오로 팀의 자율 수행 능력을 검증합니다.
 
+### 📖 에이전트 설계 매뉴얼 (docs/)
+
+본 프로젝트는 LangChain과 LangGraph 기반의 멀티에이전트 아키텍처를 따릅니다.
+에이전트 구현 시 참고할 수 있도록 `docs/` 폴더 내에 규칙 문서(`rule_langchain.md` 및 `LangChain/` 하위 파일)를 제공합니다.
+이 문서들에는 langchain 에이전트를 구축할 때 활용할 수 있는 핵심 맥락 정보가 담겨 있습니다.
+실습 과제를 해결할 때, 여러분 뿐만 아니라 코드를 작성하는 AI 에이전트에게도 이 맥락을 참조하게 하여 올바른 패턴을 스스로 이해하고 구현하도록 유도할 수 있습니다!
+
 ---
 
 ## 🏗️ 시스템 아키텍처
@@ -169,6 +176,7 @@ browser-use 에이전트가 실제 브라우저를 조작하는 장면을 실시
 AAWS_project/
 ├── notebooks/              # 핸즈온 실습 노트북 (01~05)
 ├── code_artifacts/         # Coder 에이전트가 생성한 코드 및 수집 결과(JSON)
+├── docs/                   # 📖 LangChain 멀티에이전트 아키텍처 규칙 매뉴얼
 ├── app/
 │   ├── agents/             # 에이전트 로직
 │   │   ├── chatbot.py            # 기본 챗봇 에이전트
