@@ -115,10 +115,12 @@ bash install_all.sh
 프로젝트 루트에 `.env` 파일을 생성하고 아래 키를 설정하세요.
 
 ```env
-GOOGLE_API_KEY=your_google_api_key
-LANGCHAIN_API_KEY=your_langsmith_api_key   # LangSmith 트레이싱 (선택)
-LANGCHAIN_TRACING_V2=true
-PROJECT_ROOT=/workspaces/AAWS_project      # Codespaces 기준 경로
+OPENAI_API_KEY="your-api-key"
+TAVILY_API_KEY="your-api-key"
+GOOGLE_API_KEY="your-api-key"
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_API_KEY="lyour-api-key"
+AGENTQL_API_KEY="your-api-key"
 ```
 
 ### 🔍 LangSmith 트레이싱
