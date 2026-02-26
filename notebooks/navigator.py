@@ -155,17 +155,26 @@ async def get_page_structure(url: str, scraping_goal: str) -> str:
     except Exception as e:
         return f"[Error] HTML 수집 실패: {e}\n→ browse_web을 사용하세요."
 
-    # HTML 전체를 LLM에게 넘겨 숨겨진 데이터 위치까지 모두 파악할 수 있도록 길이 제한 해제 (Gemini 토큰 한도 1M 활용)
-    cleaned_html = (result.cleaned_html or "")
+    from bs4 import BeautifulSoup
 
-    if not cleaned_html.strip():
+    raw_html = result.html or ""
+    soup = BeautifulSoup(raw_html, "html.parser")
+    
+    # CSS 셀렉터를 찾는 데 전혀 필요 없는 태그들(스크립트, 스타일, SVG 아이콘 등) 싹 제거
+    for tag in soup(["script", "style", "noscript", "svg", "path", "header", "footer"]):
+        tag.decompose()
+        
+    # HTML 구조와 class, id는 그대로 살아있는 깨끗한 뼈대 추출
+    structured_html = soup.prettify()
+
+    if not structured_html.strip():
         return "[Warning] HTML이 비어 있습니다. JS 렌더링 실패 가능성.\n→ browse_web을 사용하세요."
 
     analysis_llm = init_chat_model("google_genai:gemini-flash-latest", temperature=0)
 
     analysis_prompt = f"""아래 HTML에서 "{scraping_goal}"에 해당하는 요소의 CSS 셀렉터를 찾고 JSON으로만 응답하세요.
     [분석할 HTML]
-    {cleaned_html}
+    {structured_html}
     [응답 형식 - JSON만, 다른 텍스트 없이]
     {{
     "selectors": {{
@@ -355,6 +364,7 @@ NAVIGATOR_SYSTEM_PROMPT = """
 
 ■ browse_web(runtime, url, instruction)
   - 시각적 검증과 동적 행동(클릭, 스크롤, 대기)이 필요할 때 사용하는 최후의 보루(Fallback) 도구입니다.
+  - [주의] get_page_structure와 verify_selectors_with_samples를 여러 번 반복하면서 스스로 셀렉터 수정을 시도해보고, 최소 3번 이상 실패했을 때만 아주 제한적으로 이 도구를 호출하세요.
   - 언제 사용하는가?
     (1) 목표 데이터가 어느 URL에 숨어 있는지, 어느 버튼을 눌러야 나오는지 모를 때
     (2) 동적 페이지에서 특정 상호작용 후 데이터가 로드되는지 확인할 때
