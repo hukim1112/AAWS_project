@@ -41,3 +41,4 @@ browser-use[video]
 imageio[ffmpeg]
 agentql
 playwright
+streamlit
