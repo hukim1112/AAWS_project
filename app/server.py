@@ -37,10 +37,7 @@ from fastapi import FastAPI, APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-# --- Agent Executors Import ---
-# 주의: 환경 변수(API Key)가 로드된 후에 에이전트 모듈을 임포트해야 합니다.
-from app.agents.chatbot import agent_executor as chatbot_agent
-from app.agents.multimodal_agent import agent_executor as multimodal_agent
+import importlib
 
 # Logging Setup
 logging.basicConfig(level=logging.INFO)
@@ -57,7 +54,6 @@ class StreamInput(UserInput):
 class ChatMessage(BaseModel):
     type: str
     content: str
-
 
 # --- Router Factory ---
 def create_agent_router(agent_executor, prefix: str, tags: list = None) -> APIRouter:
@@ -92,7 +88,15 @@ def create_agent_router(agent_executor, prefix: str, tags: list = None) -> APIRo
 
                     chunk = event["data"]["chunk"]
                     if chunk and chunk.content:
-                        yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
+                        # [Gemini 리스트 출력 방어 파서]
+                        raw_content = chunk.content
+                        if isinstance(raw_content, list):
+                            content_str = "".join([c.get("text", "") if isinstance(c, dict) else str(c) for c in raw_content])
+                        else:
+                            content_str = str(raw_content)
+
+                        if content_str:
+                            yield f"data: {json.dumps({'type': 'token', 'content': content_str})}\n\n"
 
         except Exception as e:
             logger.error(f"Stream error in {prefix}: {e}")
@@ -112,7 +116,15 @@ def create_agent_router(agent_executor, prefix: str, tags: list = None) -> APIRo
             )
             # LangGraph: State['messages'][-1] is the AI response
             last_message = result["messages"][-1]
-            return ChatMessage(type="ai", content=last_message.content)
+            
+            # [Gemini 리스트 출력 방어 파서]
+            raw_content = last_message.content
+            if isinstance(raw_content, list):
+                content_str = "".join([c.get("text", "") if isinstance(c, dict) else str(c) for c in raw_content])
+            else:
+                content_str = str(raw_content)
+                
+            return ChatMessage(type="ai", content=content_str)
         except Exception as e:
             logger.error(f"Invocation error in {prefix}: {e}")
             traceback.print_exc()
@@ -127,7 +139,6 @@ def create_agent_router(agent_executor, prefix: str, tags: list = None) -> APIRo
         
     return router
 
-
 # --- App Initialization ---
 app = FastAPI(
     title="LLMOps Class Agent Server", 
@@ -135,14 +146,42 @@ app = FastAPI(
     description="Unified Server for Multiple Agents"
 )
 
+# --- Dynamic Agent Loading & Router Registration ---
+loaded_agents = []
+agents_dir = os.path.join(project_root, "app", "agents")
+
+if os.path.exists(agents_dir):
+    for filename in os.listdir(agents_dir):
+        if filename.endswith(".py") and filename != "__init__.py":
+            agent_name = filename[:-3]
+            module_path = f"app.agents.{agent_name}"
+            
+            try:
+                # 동적으로 모듈 임포트
+                module = importlib.import_module(module_path)
+                
+                # 에이전트 실행기(executor) 객체 찾기
+                # 관례상 agent_executor 이름 권장. 없으면 모듈명_agent 확인
+                executor = getattr(module, "agent_executor", None)
+                if not executor:
+                    executor = getattr(module, f"{agent_name}_agent", None)
+                    
+                if executor:
+                    logger.info(f"✅ Loaded agent: {agent_name} from {module_path}")
+                    tag_name = agent_name.replace("_", " ").title()
+                    app.include_router(
+                        create_agent_router(executor, f"/{agent_name}", [tag_name])
+                    )
+                    loaded_agents.append(agent_name)
+                else:
+                    logger.info(f"⚠️ Skip: {module_path} 모듈에는 'agent_executor'가 없어 라우터 매핑을 생략합니다.")
+            except Exception as e:
+                logger.error(f"❌ Failed to load agent {agent_name}: {e}")
+                traceback.print_exc()
+
 @app.get("/health")
 def health():
-    return {"status": "ok", "agents": ["chatbot_agent", "multimodal_agent"]}
-
-# --- Register Routers ---
-app.include_router(create_agent_router(chatbot_agent, "/chatbot", ["Chatbot"]))
-app.include_router(create_agent_router(multimodal_agent, "/multimodal_agent", ["Multimodal"])) #뒤의 리스트 부분은 API 문서에서 사용하는 태그명
-
+    return {"status": "ok", "agents": loaded_agents}
 
 if __name__ == "__main__":
     import uvicorn
