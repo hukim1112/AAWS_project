@@ -130,6 +130,10 @@ LANGSMITH_API_KEY="lyour-api-key"
 AGENTQL_API_KEY="your-api-key"
 ```
 
+```
+DISPLAY=":1" # github codespaces에서 VNC 서버로 브라우저를 보는 경우 설정이 필요합니다.
+```
+
 ### 🔍 LangSmith 트레이싱
 
 **[LangSmith](https://smith.langchain.com)** 는 LangChain/LangGraph 에이전트의 실행 흐름을 시각적으로 추적하고 디버깅할 수 있는 공식 모니터링 플랫폼입니다.
@@ -181,7 +185,7 @@ AAWS_project/
 │   ├── agents/             # 에이전트 로직
 │   │   ├── chatbot.py            # 기본 챗봇 에이전트
 │   │   ├── multimodal_agent.py   # 멀티모달 에이전트
-│   │   └── navigator.py          # 웹 브라우저 자동화 에이전트
+│   │   └── supervisor.py         # 데이터 수집 자동화 슈퍼바이저 에이전트
 │   ├── tools/              # 에이전트 도구 모음
 │   ├── server.py           # FastAPI 백엔드 서버 (에이전트 API 엔드포인트)
 │   ├── client.py           # 터미널용 테스트 CLI
