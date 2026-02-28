@@ -4,7 +4,7 @@ import json
 import re
 from typing import Optional, Any
 from pydantic import BaseModel, Field, field_validator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
@@ -14,6 +14,8 @@ from langchain_core.messages import HumanMessage
 from langchain.agents.structured_output import ToolStrategy
 from langgraph.checkpoint.memory import InMemorySaver
 from browser_use import Agent, Browser, ChatGoogle
+from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+from typing import Callable
 
 # 초기 설정
 load_dotenv(override=True)
@@ -102,7 +104,8 @@ class NavigatorBlueprintCollection(BaseModel):
 
 @dataclass
 class NavigatorContext:
-    shared_browser: Any  # Browser 인스턴스를 Context로 주입
+    shared_browser: Optional[Any] = None  # Browser 인스턴스를 Context로 주입
+    response_mode: str = field(default="chat")
 
 
 # ==========================================
@@ -332,8 +335,21 @@ async def browse_web(runtime: ToolRuntime[NavigatorContext], url: str, instructi
     - 확인 불가능한 정보는 "확인 불가"로 명시하세요.
     - 작업 완료 후 현재 페이지 URL과 상태를 함께 보고하세요.
     """
-    agent = Agent(task=task, llm=bu_llm, use_vision="auto", browser=runtime.context.shared_browser)
-    history = await agent.run(max_steps=15)
+    user_browser = getattr(runtime.context, "shared_browser", None)
+    
+    if user_browser:
+        agent = Agent(task=task, llm=bu_llm, use_vision="auto", browser=user_browser)
+        history = await agent.run(max_steps=15)
+    else:
+        # 주입받은 브라우저 인스턴스가 없을 경우 내부적으로 1회용 생성 (keep_alive 끈 채로)
+        print("   ⚠️ 공유 브라우저를 찾을 수 없어 내부 임시 브라우저를 구동합니다.")
+        temp_browser = Browser(headless=False, disable_security=True, keep_alive=False)
+        agent = Agent(task=task, llm=bu_llm, use_vision="auto", browser=temp_browser)
+        try:
+            history = await agent.run(max_steps=15)
+        finally:
+            await temp_browser.stop()
+            
     result = history.final_result() or "탐색 완료, 결과 반환 없음"
     print(f"\n✅ [browse_web 완료] {result[:200]}...")
     return result
@@ -397,17 +413,43 @@ NAVIGATOR_SYSTEM_PROMPT = """
 [매우 중요한 원칙]
 - 당신 뒤에 있는 Coder 에이전트는 웹사이트의 HTML이나 화면을 전혀 볼 수 없는 상태입니다. 단지 당신의 Blueprint 정보에만 의존합니다.
 - 애매한 값으로 대충 넘기면 파이프라인은 100% 실패합니다.
+- 만약 사용자가 "안녕하세요"와 같이 단순 인사를 하거나 구체적인 크롤링 URL/Goal 지시가 없는 상태라면, 웹탐색 도구를 실행하지 말고 자연어로 친절하게 답변하세요.
 - 확신이 들 때까지 도구를 사용해 검증하고 꼼꼼하게 작성하세요.
 """
 
-nav_model = init_chat_model("google_genai:gemini-flash-latest", temperature=0.1)
-nav_checkpointer = InMemorySaver()
+@wrap_model_call
+async def dynamic_response_format(
+    request: ModelRequest,
+    handler: Callable[[ModelRequest], ModelResponse]
+) -> ModelResponse:
+    """런타임 컨텍스트에 따라 response_format 동적 선택"""
+    mode = "chat"  # context가 없을 경우 기본값을 "chat"으로 설정합니다.
+    if request.runtime.context and hasattr(request.runtime.context, "response_mode"):
+        mode = request.runtime.context.response_mode
+    
+    if mode == "chat":
+        # 단순 대화 모드일 때는 정형화된 응답 형식을 강제하지 않음 (미리 선언된 전략을 제거)
+        request = request.override(response_format=None)
+    # else일 경우 create_agent에서 초기화시 세팅한 ToolStrategy 응답 포맷을 그대로 유지
 
-navigator_agent = create_agent(
-    model=nav_model,
-    system_prompt=NAVIGATOR_SYSTEM_PROMPT,
-    context_schema=NavigatorContext,
-    tools=[get_page_structure, verify_selectors_with_samples, browse_web],
-    checkpointer=nav_checkpointer,
-    response_format=ToolStrategy(NavigatorBlueprintCollection),
-)
+    # 비동기 환경에서 handler는 coroutine을 반환하므로 반드시 await 해야 합니다.
+    return await handler(request)
+
+def create_navigator(model_name: str = "google_genai:gemini-flash-latest", temperature: float = 0.1):
+    """
+    도구를 사용해 웹페이지 구조를 분석하고 크롤링 Blueprint를 설계하는 Navigator 에이전트를 초기화합니다.
+    """
+    nav_model = init_chat_model(model_name, temperature=temperature)
+    nav_checkpointer = InMemorySaver()
+    
+    agent = create_agent(
+        model=nav_model,
+        system_prompt=NAVIGATOR_SYSTEM_PROMPT,
+        context_schema=NavigatorContext,
+        tools=[get_page_structure, verify_selectors_with_samples, browse_web],
+        checkpointer=nav_checkpointer,
+        response_format=ToolStrategy(NavigatorBlueprintCollection), # 미리 선언해두어야 미들웨어에서 에러가 안남
+        middleware=[dynamic_response_format]
+    )
+    
+    return agent
