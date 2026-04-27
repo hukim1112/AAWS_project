@@ -21,90 +21,6 @@ AAWS는 이 과정을 AI 에이전트에게 맡깁니다.
 
 ---
 
-## 🧭 커리큘럼 구조
-
-```
-notebooks/
-├── 01_BrowserUse_Basics.ipynb          # 🌐 Browser-use로 브라우저 자동화 맛보기
-├── 02_The_Navigator.ipynb              # 🗺️ 웹 탐색 에이전트 (Navigator) 설계
-├── 03_The_Coder.ipynb                  # 💻 코드 생성 에이전트 (Coder) 설계
-├── 04_MultiAgent_Workflow.ipynb        # 🔗 Navigator + Coder 파이프라인 연결
-└── 05_Supervised_MultiAgentTeam.ipynb  # 🎯 감독형 멀티에이전트 팀 구축 (최종 미션)
-```
-
-| 단계 | 노트북 | 핵심 개념 |
-|:---:|--------|-----------|
-| 1 | `01_BrowserUse_Basics` | Browser-use, playwright, 브라우저 자동화 |
-| 2 | `02_The_Navigator` | Agent as Tool, 멀티턴 대화, shared browser |
-| 3 | `03_The_Coder` | 코드 생성, 실행 피드백 루프, Blueprint 해석 |
-| 4 | `04_MultiAgent_Workflow` | Navigator→Coder 파이프라인, LangGraph StateGraph |
-| 5 | `05_Supervised_MultiAgentTeam` | Supervisor 패턴, 팀 자율 수행, 실전 데이터 수집 |
-
-
-### 📗 01 — Browser-use 브라우저 자동화 기초
-
-LLM이 실제 브라우저를 직접 조작할 수 있는 [browser-use](https://browser-use.com) 라이브러리를 소개합니다.  
-"네이버에서 오늘 날씨 알려줘"처럼 자연어 명령 하나만으로 에이전트가 브라우저를 열고, 검색하고, 결과를 읽어오는 경험을 합니다.  
-이 단계에서 브라우저 자동화의 기본 원리(Playwright, Accessibility Tree, VNC 시각화)를 이해합니다.
-
-### 📘 02 — The Navigator: 웹 탐색 에이전트 설계
-
-browser-use를 그대로 쓰는 것의 한계를 느끼고, 이를 **"도구(Tool)"로 감싸서** 더 스마트한 상위 에이전트에게 쥐어주는 **Agent as Tool** 패턴을 구현합니다.  
-Navigator 에이전트는 사용자와 멀티턴 대화를 하며 브라우저 세션(shared browser)을 유지한 채 맥락을 이어갑니다.  
-이 단계의 핵심 질문: *"에이전트가 이전에 보던 페이지를 기억하고 이어서 탐색할 수 있을까?"*
-
-### 📙 03 — The Coder: 코드 생성 에이전트 설계
-
-Navigator가 분석한 사이트 구조를 **Blueprint(청사진)** 형태로 전달받아, 실제로 동작하는 크롤링 코드를 작성하고 실행까지 하는 Coder 에이전트를 설계합니다.  
-Coder는 코드를 실행한 뒤 오류가 나면 로그를 분석해 스스로 수정 → Python REPL 실행 피드백 루프를 통해 코드가 성공할 때까지 스스로 디버깅하는 Self-Healing 과정을 경험합니다.
-이 단계의 핵심 질문: *"Blueprint만 줘도 에이전트가 작동하는 코드를 만들 수 있을까?"*
-
-### 📕 04 — Multi-Agent Workflow: 파이프라인 연결
-
-02와 03에서 만든 Navigator와 Coder를 하나의 흐름으로 연결합니다.  
-Navigator가 Blueprint를 완성하면 자동으로 Coder에게 전달되어 수집까지 이어지는 **N계층 크롤링 파이프라인**을 구축합니다.  
-LangGraph `StateGraph`로 자동화하는 실습 과제가 포함됩니다.
-
-### 📔 05 — Supervised Multi-Agent Team: 감독형 팀 (최종 미션)
-
-Supervisor가 Navigator와 Coder를 **팀원으로 지휘**하는 구조로 전환합니다.  
-사용자는 목표만 말하면 되고, Supervisor가 "Navigator에게 분석 맡기고, 결과를 Coder에게 전달"하는 판단을 자율적으로 수행합니다.  
-실전 사이트([Quotes to Scrape](http://quotes.toscrape.com))에 대해 3가지 시나리오로 팀의 자율 수행 능력을 검증합니다.
-
-### 📖 에이전트 설계 매뉴얼 (docs/)
-
-본 프로젝트는 LangChain과 LangGraph 기반의 멀티에이전트 아키텍처를 따릅니다.
-에이전트 구현 시 참고할 수 있도록 `docs/` 폴더 내에 규칙 문서(`rule_langchain.md` 및 `LangChain/` 하위 파일)를 제공합니다.
-이 문서들에는 langchain 에이전트를 구축할 때 활용할 수 있는 핵심 맥락 정보가 담겨 있습니다.
-실습 과제를 해결할 때, 여러분 뿐만 아니라 코드를 작성하는 AI 에이전트에게도 이 맥락을 참조하게 하여 올바른 패턴을 스스로 이해하고 구현하도록 유도할 수 있습니다!
-
----
-
-## 🏗️ 시스템 아키텍처
-
-### 에이전트 팀 구조 (05단계 최종 형태)
-
-```
-👤 사용자
-    │ "이 사이트에서 데이터 수집해줘"
-    ▼
-🧠 Supervisor
-    ├── 🗺️ Navigator     ← crawl4ai + browser-use로 HTML 분석, Blueprint 설계
-    └── 💻 Coder         ← Blueprint 해석, Playwright 코드 작성 및 실행
-```
-
-### 핵심 도구 스택
-
-| 역할 | 도구 |
-|------|------|
-| LLM / 에이전트 프레임워크 | LangChain `create_agent`, LangGraph |
-| 브라우저 자동화 (인터랙션) | [browser-use](https://browser-use.com) |
-| HTML 수집 / 렌더링 | [crawl4ai](https://crawl4ai.com) |
-| 코드 실행 | Python `subprocess` (Playwright sync) |
-| 상태 관리 | LangGraph `InMemorySaver`, `StateGraph` |
-
----
-
 ## 🚀 시작하기 (환경 세팅)
 
 Codespaces 환경을 처음 열었다면, 터미널에서 다음 명령어를 실행하여 필요한 모든 패키지를 한 번에 설치하세요.
@@ -193,6 +109,91 @@ AAWS_project/
 ├── install/                # 환경 설치 스크립트 모음
 └── start_vnc.sh            # VNC + noVNC 서버 실행 스크립트
 ```
+
+## 🧭 커리큘럼 구조
+
+```
+notebooks/
+├── 01_BrowserUse_Basics.ipynb          # 🌐 Browser-use로 브라우저 자동화 맛보기
+├── 02_The_Navigator.ipynb              # 🗺️ 웹 탐색 에이전트 (Navigator) 설계
+├── 03_The_Coder.ipynb                  # 💻 코드 생성 에이전트 (Coder) 설계
+├── 04_MultiAgent_Workflow.ipynb        # 🔗 Navigator + Coder 파이프라인 연결
+└── 05_Supervised_MultiAgentTeam.ipynb  # 🎯 감독형 멀티에이전트 팀 구축 (최종 미션)
+```
+
+| 단계 | 노트북 | 핵심 개념 |
+|:---:|--------|-----------|
+| 1 | `01_BrowserUse_Basics` | Browser-use, playwright, 브라우저 자동화 |
+| 2 | `02_The_Navigator` | Agent as Tool, 멀티턴 대화, shared browser |
+| 3 | `03_The_Coder` | 코드 생성, 실행 피드백 루프, Blueprint 해석 |
+| 4 | `04_MultiAgent_Workflow` | Navigator→Coder 파이프라인, LangGraph StateGraph |
+| 5 | `05_Supervised_MultiAgentTeam` | Supervisor 패턴, 팀 자율 수행, 실전 데이터 수집 |
+
+
+### 📗 01 — Browser-use 브라우저 자동화 기초
+
+LLM이 실제 브라우저를 직접 조작할 수 있는 [browser-use](https://browser-use.com) 라이브러리를 소개합니다.  
+"네이버에서 오늘 날씨 알려줘"처럼 자연어 명령 하나만으로 에이전트가 브라우저를 열고, 검색하고, 결과를 읽어오는 경험을 합니다.  
+이 단계에서 브라우저 자동화의 기본 원리(Playwright, Accessibility Tree, VNC 시각화)를 이해합니다.
+
+### 📘 02 — The Navigator: 웹 탐색 에이전트 설계
+
+browser-use를 그대로 쓰는 것의 한계를 느끼고, 이를 **"도구(Tool)"로 감싸서** 더 스마트한 상위 에이전트에게 쥐어주는 **Agent as Tool** 패턴을 구현합니다.  
+Navigator 에이전트는 사용자와 멀티턴 대화를 하며 브라우저 세션(shared browser)을 유지한 채 맥락을 이어갑니다.  
+이 단계의 핵심 질문: *"에이전트가 이전에 보던 페이지를 기억하고 이어서 탐색할 수 있을까?"*
+
+### 📙 03 — The Coder: 코드 생성 에이전트 설계
+
+Navigator가 분석한 사이트 구조를 **Blueprint(청사진)** 형태로 전달받아, 실제로 동작하는 크롤링 코드를 작성하고 실행까지 하는 Coder 에이전트를 설계합니다.  
+Coder는 코드를 실행한 뒤 오류가 나면 로그를 분석해 스스로 수정 → Python REPL 실행 피드백 루프를 통해 코드가 성공할 때까지 스스로 디버깅하는 Self-Healing 과정을 경험합니다.
+이 단계의 핵심 질문: *"Blueprint만 줘도 에이전트가 작동하는 코드를 만들 수 있을까?"*
+
+### 📕 04 — Multi-Agent Workflow: 파이프라인 연결
+
+02와 03에서 만든 Navigator와 Coder를 하나의 흐름으로 연결합니다.  
+Navigator가 Blueprint를 완성하면 자동으로 Coder에게 전달되어 수집까지 이어지는 **N계층 크롤링 파이프라인**을 구축합니다.  
+LangGraph `StateGraph`로 자동화하는 실습 과제가 포함됩니다.
+
+### 📔 05 — Supervised Multi-Agent Team: 감독형 팀 (최종 미션)
+
+Supervisor가 Navigator와 Coder를 **팀원으로 지휘**하는 구조로 전환합니다.  
+사용자는 목표만 말하면 되고, Supervisor가 "Navigator에게 분석 맡기고, 결과를 Coder에게 전달"하는 판단을 자율적으로 수행합니다.  
+실전 사이트([Quotes to Scrape](http://quotes.toscrape.com))에 대해 3가지 시나리오로 팀의 자율 수행 능력을 검증합니다.
+
+### 📖 에이전트 설계 매뉴얼 (docs/)
+
+본 프로젝트는 LangChain과 LangGraph 기반의 멀티에이전트 아키텍처를 따릅니다.
+에이전트 구현 시 참고할 수 있도록 `docs/` 폴더 내에 규칙 문서(`rule_langchain.md` 및 `LangChain/` 하위 파일)를 제공합니다.
+이 문서들에는 langchain 에이전트를 구축할 때 활용할 수 있는 핵심 맥락 정보가 담겨 있습니다.
+실습 과제를 해결할 때, 여러분 뿐만 아니라 코드를 작성하는 AI 에이전트에게도 이 맥락을 참조하게 하여 올바른 패턴을 스스로 이해하고 구현하도록 유도할 수 있습니다!
+
+---
+
+## 🏗️ 시스템 아키텍처
+
+### 에이전트 팀 구조 (05단계 최종 형태)
+
+```
+👤 사용자
+    │ "이 사이트에서 데이터 수집해줘"
+    ▼
+🧠 Supervisor
+    ├── 🗺️ Navigator     ← crawl4ai + browser-use로 HTML 분석, Blueprint 설계
+    └── 💻 Coder         ← Blueprint 해석, Playwright 코드 작성 및 실행
+```
+
+### 핵심 도구 스택
+
+| 역할 | 도구 |
+|------|------|
+| LLM / 에이전트 프레임워크 | LangChain `create_agent`, LangGraph |
+| 브라우저 자동화 (인터랙션) | [browser-use](https://browser-use.com) |
+| HTML 수집 / 렌더링 | [crawl4ai](https://crawl4ai.com) |
+| 코드 실행 | Python `subprocess` (Playwright sync) |
+| 상태 관리 | LangGraph `InMemorySaver`, `StateGraph` |
+
+---
+
 
 ---
 

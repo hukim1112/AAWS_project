@@ -23,7 +23,7 @@ from app.tools.utility import read_image_and_analyze, web_search_custom_tool
 
 from browser_use import Agent, Browser, ChatGoogle
 
-# 각 툴 호출 시 독립된 에이전트 인스턴스를 생성하여 메모리/상태 오염을 방지합니다.
+# 하위 에이전트는 전역에서 한 번만 생성하고 재사용하여 메모리/맥락(Checkpointer)을 유지합니다.
 
 # =========================================================
 # 1. 하위 에이전트 인스턴스 전역 생성 (상태 유지용)
@@ -56,6 +56,8 @@ async def chat_to_navigator(request: str, runtime: ToolRuntime, config: Runnable
         headless=False,
         disable_security=True,
         keep_alive=True,
+        minimum_wait_page_load_time=1.0,           # 최소 1초 렌더링 대기 (기본 0.25s)
+        wait_for_network_idle_page_load_time=0.1,  # 100ms 공백이면 idle 판정 (기본 0.5s)
     )
 
     ctx = NavigatorContext(shared_browser=browser_instance, response_mode=mode)
@@ -124,6 +126,12 @@ SUPERVISOR_SYSTEM_PROMPT = """
 5. Coder까지 작업을 완료하면, Coder가 돌려준 최종 Output을 사용자에게 알기 쉽게 (마크다운 포맷) 요약정리하여 보고하세요.
 6. 복합적인 질문이나 이미지 분석/표시 요구가 있을 경우, 사용 가능한 도구를 활용하여 단계를 나누어 유연하게 처리하세요.
 7. 필요한 경우 유저에게 되묻거나, 하위 에이전트에게 적극적으로 피드백을 주어 작업을 개선하세요.
+
+[실패 대응]
+8. Navigator가 "[Error]", "실패", "셀렉터를 찾지 못함" 등의 응답을 반환하면:
+   - Coder에게 바로 전달하지 마세요.
+   - Navigator에게 mode="chat"으로 다시 호출하여 원인을 파악하고 대안을 논의하세요.
+   - 2회 연속 실패 시, 사용자에게 상황을 보고하고 지시를 요청하세요.
 
 [UI 및 이미지 렌더링 가이드라인]
 - "이미지를 보여줘" 또는 "이 이미지 설명해줘"와 같은 요청이 있으면 이미지 관련 도구를 사용하세요.
