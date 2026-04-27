@@ -1,5 +1,6 @@
 import os
 import subprocess
+import json
 from dataclasses import dataclass
 from langchain.chat_models import init_chat_model
 from langchain.agents import create_agent
@@ -125,7 +126,7 @@ def run_python_script(filepath: str, script_args: str = "") -> str:
             cwd=ARTIFACT_DIR,
             capture_output=True, 
             text=True, 
-            timeout=30 
+            timeout=120 
         )
         
         output = result.stdout
@@ -138,7 +139,7 @@ def run_python_script(filepath: str, script_args: str = "") -> str:
         return output
         
     except subprocess.TimeoutExpired:
-        return "[Error] 실행 시간(30초)을 초과했습니다. 무한 루프(while True 등)나 블로킹 처리를 확인하고 수정하세요."
+        return "[Error] 실행 시간(120초)을 초과했습니다. 무한 루프(while True 등)나 블로킹 처리를 확인하고 수정하세요."
     except Exception as e:
         return f"[System Error] 코드 실행 오류 발생: {str(e)}"
 
@@ -158,6 +159,65 @@ def write_text_file(filepath: str, content: str) -> str:
         f.write(content)
 
     return f"[Success] '{filepath}' 파일이 성공적으로 저장되었습니다. (경로: {safe_filepath})"
+
+
+@tool(parse_docstring=True)
+def validate_collected_data(filepath: str) -> str:
+    """수집된 JSON 데이터 파일의 품질을 자동으로 검증합니다.
+    총 레코드 수, 필드별 빈 값 비율, 중복 비율을 분석하여 보고합니다.
+    코드를 실행하여 데이터 수집이 완료된 직후 반드시 이 도구를 사용하여 결과를 검증하세요.
+
+    Args:
+        filepath: 검증할 데이터 파일명 (JSON 형식, 예: collected_data.json)
+    """
+    safe_filepath = os.path.join(ARTIFACT_DIR, os.path.basename(filepath))
+
+    if not os.path.exists(safe_filepath):
+        return f"[Error] 파일이 존재하지 않습니다: {safe_filepath}"
+
+    try:
+        with open(safe_filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        return f"[Error] JSON 파싱 실패: {e}"
+
+    if not isinstance(data, list):
+        return f"[Info] 최상위가 배열이 아닙니다 (타입: {type(data).__name__}). 배열 형태의 JSON만 검증 가능합니다."
+
+    total = len(data)
+    if total == 0:
+        return "[Warning] ❌ 수집된 데이터가 0건입니다! 스크립트의 셀렉터나 URL을 다시 확인하세요."
+
+    # 필드별 빈 값 비율 분석
+    fields = list(data[0].keys()) if data else []
+    report = [f"📊 검증 결과: 총 {total}건 수집"]
+    for field in fields:
+        empty = sum(1 for d in data if not d.get(field))
+        rate = empty / total * 100
+        status = "✅" if rate < 10 else "⚠️" if rate < 30 else "❌"
+        report.append(f"  {status} {field}: 빈 값 {empty}건 ({rate:.1f}%)")
+
+    # 중복 검사
+    seen = set()
+    duplicates = 0
+    for d in data:
+        key = json.dumps(d, sort_keys=True, ensure_ascii=False)
+        if key in seen:
+            duplicates += 1
+        seen.add(key)
+    dup_status = "✅" if duplicates == 0 else "⚠️"
+    report.append(f"  {dup_status} 중복: {duplicates}건 ({duplicates / total * 100:.1f}%)")
+
+    # 최종 판정
+    has_critical = any(sum(1 for d in data if not d.get(f)) / total > 0.3 for f in fields)
+    if has_critical:
+        report.append("\n[Action Required] ❌ 빈 값 30% 초과 필드가 있습니다. 셀렉터를 재검토하세요.")
+    elif total < 3:
+        report.append("\n[Warning] ⚠️ 수집 건수가 3건 미만입니다. 페이지네이션이나 셀렉터를 확인하세요.")
+    else:
+        report.append("\n[OK] ✅ 데이터 품질이 양호합니다.")
+
+    return "\n".join(report)
 
 
 # =========================================================
@@ -202,6 +262,12 @@ CODER_SYSTEM_PROMPT = """
      2) 시도한 수정 방법 목록 (회차별)
      3) 해결하지 못한 이유에 대한 분석 및 유저에게 요청할 사항
 
+7. 점진적 수집 전략 (Progressive Collection):
+   - 대량 데이터를 수집하는 스크립트를 작성할 때, 처음부터 전체를 수집하지 마세요.
+   - 먼저 10건만 수집하도록 제한하여 실행하고, 데이터가 올바른지 확인하세요.
+   - 검증이 끝나면 수량을 늘려서(100건 → 전체) 단계적으로 확대하세요.
+   - 이렇게 하면 셀렉터 오류나 사이트 차단을 조기에 발견할 수 있습니다.
+
 [웹 스크래핑 핵심 행동 지침]
 
 당신의 주요 임무는 다른 에이전트(Navigator)가 작성한 JSON 형태의 'Blueprint(크롤링 청사진)'를 건네받아, 
@@ -210,8 +276,9 @@ CODER_SYSTEM_PROMPT = """
 1. Blueprint 완벽 해석:
    - 주어진 JSON 데이터에서 `rendering_type`, `anti_bot_notes`, `layers` 등의 정보를 완벽하게 분석하세요.
    - 렌더링 방식이 "Static SSR"이면 `requests`와 `BeautifulSoup4`를 사용해 가볍게 작성하세요.
-   - 렌더링 방식이 "Dynamic CSR/JS"이거나 `anti_bot_notes`에 JS 렌더링이 언급되어 있다면, 무조건 `playwright`의 
-     비동기 방식(async_playwright)을 사용하여 동적 코드를 작성하세요.
+   - 렌더링 방식이 "Dynamic CSR/JS"이거나 `anti_bot_notes`에 JS 렌더링이 언급되어 있다면, `playwright`의 
+     동기 방식(sync_playwright)을 사용하여 동적 코드를 작성하세요.
+     (이 스크립트는 독립 프로세스에서 실행되므로 동기 방식이 더 안정적입니다.)
 
 2. 오류 방어 및 안티봇 우회 (Robstness):
    - `anti_bot_notes`에 경고가 있다면, User-Agent 위조(fake_useragent), 브라우저 헤더 추가, 
@@ -228,8 +295,11 @@ CODER_SYSTEM_PROMPT = """
 
 4. 검증 및 디버깅:
    - 스크립트를 생성한 직후, 반드시 `run_python_script` 툴을 사용해 자신이 만든 파이썬 코드를 실행하세요.
+   - 실행 후 JSON 파일이 생성되었다면, 즉시 `validate_collected_data` 툴로 데이터 품질을 검증하세요.
+   - 점진적 수집과 연계한 워크플로우: 10건 테스트 → run → validate → 문제없으면 수량 확대 → run → validate
    - 만약 에러[Error Output]가 떨어지거나 아무것도 수집되지 않는다면, 
      `read_code_file` -> `edit_code_file` 콤보를 사용해 에러가 난 라인만 수술하듯 고치고 다시 실행하세요.
+
 
 """
 
@@ -245,6 +315,7 @@ def create_senior_coder(model_name: str = "google_genai:gemini-flash-latest", te
         create_new_file,
         write_text_file,
         run_python_script,
+        validate_collected_data,
     ]
 
     # FilesystemFileSearchMiddleware: code_artifacts/ 내 파일 검색·열람 능력 추가

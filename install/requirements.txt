@@ -42,3 +42,4 @@ imageio[ffmpeg]
 agentql
 playwright
 streamlit
+crawl4ai

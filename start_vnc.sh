@@ -3,6 +3,7 @@
 # 1. 기존에 찌꺼기로 남은 잠금 파일 및 프로세스 정리
 pkill -f Xvfb
 pkill -f x11vnc
+pkill -f fluxbox
 pkill -f novnc
 sudo rm -f /tmp/.X1-lock
 sudo rm -f /tmp/.X11-unix/X1

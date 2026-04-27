@@ -108,6 +108,7 @@ class NavigatorContext:
     response_mode: str = field(default="chat")
 
 
+
 # ==========================================
 # 유틸리티 함수
 # ==========================================
@@ -172,6 +173,12 @@ async def get_page_structure(url: str, scraping_goal: str) -> str:
 
     if not structured_html.strip():
         return "[Warning] HTML이 비어 있습니다. JS 렌더링 실패 가능성.\n→ browse_web을 사용하세요."
+
+    # HTML이 너무 크면 LLM 토큰 한도 초과 방지를 위해 잘라냄
+    MAX_HTML_LENGTH = 300000
+    if len(structured_html) > MAX_HTML_LENGTH:
+        structured_html = structured_html[:MAX_HTML_LENGTH]
+        print(f"   ⚠️ HTML이 {MAX_HTML_LENGTH}자를 초과하여 잘림 처리됨")
 
     analysis_llm = init_chat_model("google_genai:gemini-flash-latest", temperature=0)
 
@@ -282,8 +289,15 @@ async def verify_selectors_with_samples(url: str, selectors_json: str) -> str:
             await browser.close()
             
             output = []
+            has_failure = False
             for k, v in results.items():
-                output.append(f"[{k}] 매칭 항목 수: {len(v)}개 | 추출된 샘플: {v}")
+                if len(v) == 0:
+                    output.append(f"[⚠️ FAILED] {k}: 매칭 0건 — 이 셀렉터는 실패했습니다. 셀렉터를 수정하거나 다른 도구를 사용하세요.")
+                    has_failure = True
+                else:
+                    output.append(f"[✅ OK] {k}: 매칭 {len(v)}건 | 추출 샘플: {v}")
+            if has_failure:
+                output.append("\n[요약] 실패한 셀렉터가 있습니다. 셀렉터를 수정하여 다시 verify_selectors_with_samples를 호출하세요.")
             return "\n".join(output)
             
     except Exception as e:
@@ -343,7 +357,10 @@ async def browse_web(runtime: ToolRuntime[NavigatorContext], url: str, instructi
     else:
         # 주입받은 브라우저 인스턴스가 없을 경우 내부적으로 1회용 생성 (keep_alive 끈 채로)
         print("   ⚠️ 공유 브라우저를 찾을 수 없어 내부 임시 브라우저를 구동합니다.")
-        temp_browser = Browser(headless=False, disable_security=True, keep_alive=False)
+        temp_browser = Browser(
+            headless=False, disable_security=True, keep_alive=False,
+            minimum_wait_page_load_time=1.0,  # SPA 등 무거운 사이트 대응 (기본 0.25s)
+        )
         agent = Agent(task=task, llm=bu_llm, use_vision="auto", browser=temp_browser)
         try:
             history = await agent.run(max_steps=15)
@@ -386,6 +403,12 @@ NAVIGATOR_SYSTEM_PROMPT = """
     (2) 동적 페이지에서 특정 상호작용 후 데이터가 로드되는지 확인할 때
     (3) 팝업, 캡차, 로그인 창 등의 Anti-Bot 요소가 가로막고 있는지 검증할 때
 
+■ 도구 실패 시 전환 규칙:
+  - get_page_structure가 "[Error]" 또는 "[Warning]"으로 시작하는 응답을 반환하면,
+    같은 URL로 재시도하지 말고 즉시 browse_web으로 전환하세요.
+  - get_page_structure가 HTML을 수집했지만 셀렉터를 제대로 찾지 못한 경우에만
+    scraping_goal을 더 구체적으로 바꿔서 재시도 하세요.
+
 ────────────────
 [Blueprint 핵심 판단 가이드: Coder에게 넘겨줄 필수 정보]
 **아래 항목들은 Coder가 코드를 짜는 핵심 기준이 되므로 매우 정확하게 판단해야 합니다.**
@@ -399,6 +422,10 @@ NAVIGATOR_SYSTEM_PROMPT = """
    - "AJAX버튼": URL 변경 없이 '더보기' 버튼 등으로 목록이 추가됨
    - "무한스크롤": 마우스 스크롤을 내리면 자동 로드됨
    - "None": 페이징 없음
+   판단 기준:
+   - URL에 ?page=, &p=, /page/ 등이 있으면 → "URL파라미터"
+   - "더보기", "Load More" 버튼이 보이면 → "AJAX버튼"
+   - 확인이 안 되면, get_page_structure로 하단 영역의 페이지네이션 요소를 별도로 분석하세요.
 
 3. 셀렉터 정밀 검증 (Crucial - 추가된 규칙!):
    - 도구(get_page_structure 또는 browse_web)가 셀렉터 후보를 알려주면, 그게 진짜 "요소 1개"를 뜻하는지, "반복되는 컨테이너"를 뜻하는지 구분하세요.
