@@ -56,8 +56,6 @@ async def chat_to_navigator(request: str, runtime: ToolRuntime, config: Runnable
         headless=False,
         disable_security=True,
         keep_alive=True,
-        minimum_wait_page_load_time=1.0,           # 최소 1초 렌더링 대기 (기본 0.25s)
-        wait_for_network_idle_page_load_time=0.1,  # 100ms 공백이면 idle 판정 (기본 0.5s)
     )
 
     ctx = NavigatorContext(shared_browser=browser_instance, response_mode=mode)

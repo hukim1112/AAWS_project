@@ -357,10 +357,7 @@ async def browse_web(runtime: ToolRuntime[NavigatorContext], url: str, instructi
     else:
         # 주입받은 브라우저 인스턴스가 없을 경우 내부적으로 1회용 생성 (keep_alive 끈 채로)
         print("   ⚠️ 공유 브라우저를 찾을 수 없어 내부 임시 브라우저를 구동합니다.")
-        temp_browser = Browser(
-            headless=False, disable_security=True, keep_alive=False,
-            minimum_wait_page_load_time=1.0,  # SPA 등 무거운 사이트 대응 (기본 0.25s)
-        )
+        temp_browser = Browser(headless=False, disable_security=True, keep_alive=False)
         agent = Agent(task=task, llm=bu_llm, use_vision="auto", browser=temp_browser)
         try:
             history = await agent.run(max_steps=15)
